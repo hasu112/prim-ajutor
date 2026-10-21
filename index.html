@@ -153,8 +153,8 @@ footer{margin-top:36px;font-size:13px;color:var(--muted);border-top:1px solid va
 
 <main class="wrap" id="app"></main>
 <script>
-/* ===== SETARE: pune între ghilimele linkul aplicației web Google (se termină cu /exec). Lasă gol ca să nu se trimită nimic. ===== */
-window.SHEET_URL = "https://script.google.com/macros/s/AKfycbzEDXqVEHyk3i6wM_p9sKQFwtsdjVi7mCtaeGc5qZbG85PYGZRrakRj9ROmt_W-G0Ny/exec";
+/* ===== SETARE: pune între ghilimele linkul PRECOMPLETAT al formularului Google (sau un link Apps Script .../exec). Lasă gol ca să nu se trimită nimic. ===== */
+window.SHEET_URL = "https://docs.google.com/forms/d/e/1FAIpQLSe50gUKNTK5DSQSaGIgeOEd4y3C8fK6QQe0eb-HYi7AkWKeTw/viewform?usp=pp_url&entry.1920063410=a&entry.1237063836=b&entry.1937984043=c&entry.547177204=d&entry.904770683=e&entry.242420388=f";
 </script>
 
 <script>
@@ -7301,7 +7301,13 @@ try{ store = JSON.parse(localStorage.getItem('pac-scores')||'{}')||{} }catch(e){
 function save(){ try{ localStorage.setItem('pac-scores', JSON.stringify(store)) }catch(e){} cloudPush(); }
 /* ---------- Trimiterea rezultatelor într-un Google Sheet (opțional; vezi SHEET_URL la începutul fișierului) ---------- */
 const SHEET = (window.SHEET_URL||'').trim();
-const SHEET_ON = /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(SHEET);
+// Două variante acceptate: (1) link Apps Script .../exec  (2) link PRECOMPLETAT de Google Form (.../viewform?usp=pp_url&entry.N=...)
+const IS_SCRIPT = /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(SHEET);
+let FORM = null;
+(function(){ const m=/^(https:\/\/docs\.google\.com\/forms\/(?:u\/\d+\/)?d\/e\/[^/]+)\/viewform\?(.*)$/.exec(SHEET); if(!m) return;
+  const ids=[]; m[2].split('&').forEach(kv=>{ const k=kv.split('=')[0]; if(/^entry\.\d+$/.test(k) && !ids.includes(k)) ids.push(k); });
+  if(ids.length) FORM={action:m[1].replace(/\/u\/\d+\//,'/')+'/formResponse', ids}; })();
+const SHEET_ON = IS_SCRIPT || !!FORM;
 const cloud = { owner:false };
 let unsubRes=null;
 function deviceId(){ try{ let v=localStorage.getItem('pac-dev'); if(!v){ v=Math.random().toString(36).slice(2,10); localStorage.setItem('pac-dev',v);} return v; }catch(e){ return ''; } }
@@ -7312,8 +7318,18 @@ function logEntry(t, pct, extra){
   if(t==='exam'){ tip='Examen general'; titlu='Examen general'; }
   else if(m){ c=CH.find(x=>x.id==m[1]); cap=m[1]; titlu=c?c.title:''; }
   else if((m=/^c(\d+)_(\d+)$/.exec(t))){ c=CH.find(x=>x.id==m[1]); tip='Caz practic'; cap=m[1]; titlu=c&&c.cases[+m[2]]?c.cases[+m[2]].title:''; }
-  const body=JSON.stringify({name:getName().slice(0,80)||'Fără nume', tip, cap, titlu, pct, r:e.r, of:e.of, dev:deviceId()});
-  try{ fetch(SHEET,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body}).catch(()=>{}); }catch(err){}
+  const name=getName().slice(0,80)||'Fără nume';
+  try{
+    if(FORM){
+      // ordinea întrebărilor din formular: Nume, Tip, Capitol, Test, Scor %, Corecte
+      const vals=[name, tip, cap||'-', titlu||'-', String(pct), (e.r!=null?e.r+' din '+e.of:'-')];
+      const fd=new URLSearchParams(); FORM.ids.forEach((id,i)=>{ if(i<vals.length) fd.append(id, vals[i]); });
+      fetch(FORM.action,{method:'POST',mode:'no-cors',body:fd}).catch(()=>{});
+    } else {
+      const body=JSON.stringify({name, tip, cap, titlu, pct, r:e.r, of:e.of, dev:deviceId()});
+      fetch(SHEET,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body}).catch(()=>{});
+    }
+  }catch(err){}
 }
 function cloudPush(){}
 function cloudInit(){}
